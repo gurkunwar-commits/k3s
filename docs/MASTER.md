@@ -132,13 +132,19 @@ scripts for reproducible installs.
 
 Longhorn provides distributed block storage built from local disks on each node.
 
-- **Replication:** volumes keep **2 replicas** on different nodes, so a single
-  node failure does not lose data (`replicaSoftAntiAffinity: false` enforces
-  spreading).
+- **Replication:** general-purpose volumes keep **2 replicas** on different
+  nodes, so a single node failure does not lose data
+  (`replicaSoftAntiAffinity: false` enforces spreading).
 - **StorageClasses:**
-  - `longhorn` — **the single cluster default** (Delete reclaim policy).
-  - `longhorn-postgres` — for database volumes, **Retain** reclaim policy so a
-    dropped PVC does not erase data; `dataLocality: best-effort`.
+  - `longhorn` — **the single cluster default** (2 replicas, Delete reclaim).
+  - `longhorn-postgres` — for database volumes, **1 node-local replica**
+    (`numberOfReplicas: 1`, `dataLocality: strict-local`), **Retain** reclaim
+    policy. Redundancy for the database is provided at the Postgres layer (three
+    full instances, one per node), so a second block-level replica would only
+    add a synchronous cross-node write to every commit. A single local replica
+    keeps each instance's writes on local disk; if a node's disk is lost,
+    CloudNativePG rebuilds that instance from a peer. See
+    [Performance](#appendix-c-performance-benchmarks).
   - `longhorn-replicated` — general replicated storage, Delete reclaim.
   - `longhorn-static` — for pre-provisioned volumes.
 - **k3s local-path is intentionally disabled** (`disable: local-storage`).
@@ -155,9 +161,21 @@ automatically.
 
 CloudNativePG runs a 3-instance PostgreSQL cluster:
 
-- **Topology:** 1 primary + 2 synchronous replicas, one instance per node
-  (pod anti-affinity). Quorum-based synchronous replication (`method: any`,
-  `number: 1`) keeps at least one replica in sync with the primary.
+- **Topology:** 1 primary + 2 replicas, one instance per node (pod
+  anti-affinity).
+- **Replication:** **asynchronous** streaming. `COMMIT` returns after the local
+  WAL flush and does not block on a replica acknowledgement, removing the
+  cross-node quorum wait from the commit path; replicas stream and catch up
+  continuously. Local single-node durability is retained (`synchronous_commit`
+  defaults to on). This is a deliberate throughput/latency choice over the
+  stricter zero-data-loss guarantee of quorum synchronous replication — see
+  [Performance](#appendix-c-performance-benchmarks). To require a synchronous
+  standby instead, add a `postgresql.synchronous` stanza (`method: any`,
+  `number: 1`).
+- **WAL volume:** 5 Gi. Asynchronous commits generate WAL faster, so a small WAL
+  volume can fill during a write burst before checkpoints recycle it and crash
+  the instance with "not enough disk space"; 5 Gi leaves headroom above
+  `max_wal_size`.
 - **Failover:** unsupervised; the operator promotes a replica automatically if
   the primary fails, and rejoins the old primary as a replica.
 - **Connection endpoints (in-cluster):**
@@ -501,3 +519,51 @@ non-default port. Final verified state: 3 nodes Ready; PostgreSQL 3/3 healthy
 with 2 replicas streaming; secrets encryption enabled; a single default
 StorageClass; 6443/10250 closed to the internet on all nodes; PSA and
 NetworkPolicies enforcing as designed.
+
+# Appendix C. Performance benchmarks
+
+Measured on the reference deployment (head 4 vCPU / 7 GB, workers 2 vCPU / 3 GB).
+The Postgres primary ran on the head node for both runs. "Before" is the
+original configuration (Postgres quorum synchronous replication + 2-replica
+Longhorn storage); "after" is the tuned configuration (asynchronous replication
++ single node-local Longhorn replica). fio uses `direct=1`, 4 KiB random,
+`iodepth=32`, 4 jobs.
+
+### Storage IOPS — `longhorn-postgres` volume
+
+| Test | Before (2 replicas) | After (1 local replica) |
+|------|--------------------:|------------------------:|
+| 4K random write | 2,894 IOPS · 11.3 MiB/s · p99 122 ms | **8,085 IOPS · 31.6 MiB/s · p99 ~47 µs** |
+| 4K random read | 12,003 IOPS · 46.7 MiB/s | **15,400 IOPS · 60.3 MiB/s** |
+| 4K random 70/30 | 7,894 r / 3,392 w IOPS | **10,800 r / 4,626 w IOPS** |
+| 1M sequential write | 182 MiB/s | **203 MiB/s** |
+| 1M sequential read | 221 MiB/s | **409 MiB/s** |
+
+The write gain is the headline: removing the synchronous cross-node replica
+write drops 4 K write latency from ~122 ms (p99) to tens of microseconds and
+nearly triples write IOPS.
+
+### Database throughput — pgbench (scale 100, 32 clients, 4 threads)
+
+| Workload | Before (quorum sync) | After (async) |
+|----------|---------------------:|--------------:|
+| TPC-B read/write, 300 s | 1,082 TPS · 29.1 ms | **1,409 TPS · 22.2 ms** |
+| SELECT-only, 60 s | 2,828 TPS · 11.3 ms | **6,205 TPS · 5.2 ms** |
+
+Both runs completed with zero failed transactions. Read/write throughput rose
+~30 % and latency fell ~24 %; the remaining ceiling is the primary node's CPU.
+
+### HTTP ingress — Locust (300 users, 180 s, Traefik → app over TLS)
+
+Unchanged and already excellent: **1,410 req/s, 0 failures, 2 ms median, 33 ms
+p99.** Not re-run — the ingress path was not modified.
+
+### Trade-off
+
+Asynchronous replication and a single storage replica optimise for latency and
+throughput. The cost is a smaller data-safety margin: a hard failure of the
+primary node can lose the last few unreplicated transactions, and a lost disk on
+one instance is rebuilt from a peer rather than from a local mirror. The DB layer
+still holds three full copies across three nodes. For a workload that cannot
+tolerate any committed-transaction loss, restore quorum synchronous replication
+(Section 6) and 2-replica storage, accepting the ~30 % throughput reduction.

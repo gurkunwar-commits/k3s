@@ -1,5 +1,13 @@
 ---
-# PG volumes: 2 Longhorn replicas (survives 1 node loss)
+# PG volumes: a SINGLE, node-local Longhorn replica.
+#
+# Redundancy for the database is provided at the Postgres layer — CloudNativePG
+# keeps three full instances (primary + 2 replicas), one per node, each on its
+# own volume. Keeping a second Longhorn replica of every block on top of that is
+# redundant, and its synchronous cross-node write is the dominant source of
+# write latency. `numberOfReplicas: 1` + `dataLocality: strict-local` keeps each
+# instance's data on its own node, so writes hit local disk with no network hop.
+# If a node's disk is lost, CloudNativePG rebuilds that instance from a peer.
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
 metadata:
@@ -11,11 +19,11 @@ allowVolumeExpansion: true
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
 parameters:
-  numberOfReplicas: "2"
+  numberOfReplicas: "1"
   staleReplicaTimeout: "30"
   fromBackup: ""
   fsType: "ext4"
-  dataLocality: "best-effort"
+  dataLocality: "strict-local"
   unmapMarkSnapChainRemoved: "ignored"
 ---
 # General replicated storage for non-PG workloads

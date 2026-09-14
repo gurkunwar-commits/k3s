@@ -38,13 +38,20 @@ spec:
     resizeInUseVolumes: true
 
   walStorage:
-    size: 2Gi
+    # 5Gi (not 2Gi): with asynchronous replication the commit path is faster and
+    # generates WAL more quickly, so a small WAL volume can fill during a write
+    # burst before checkpoints recycle it — which crashes the instance with
+    # "not enough disk space". 5Gi leaves ample headroom above max_wal_size.
+    size: 5Gi
     storageClass: longhorn-postgres
 
   postgresql:
-    synchronous:
-      method: any
-      number: 1
+    # Asynchronous streaming replication: COMMIT returns after the local WAL
+    # flush and does not block on a replica acknowledgement. This removes the
+    # cross-node quorum wait from the commit path. Durability of a committed
+    # transaction against a single-node crash is still guaranteed locally
+    # (synchronous_commit defaults to on); only the "wait for a standby" step is
+    # dropped. Replicas stream and catch up continuously in the background.
     parameters:
       max_connections: "200"
       shared_buffers: "256MB"
