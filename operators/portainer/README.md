@@ -5,8 +5,12 @@ no public Traefik Ingress.
 
 ## Setup (private — recommended)
 
+Before install: enable MagicDNS + **HTTPS Certificates**, ACL tags
+`tag:k8s-operator` / `tag:k8s`, and an OAuth client that may create those tags.
+See [operators/tailscale/README.md](../tailscale/README.md).
+
 ```bash
-# 1. Tailscale operator (OAuth in head/.env)
+# 1. Tailscale operator (OAuth in head/.env) — run the script, don't paste it
 ./operators/tailscale/install-operator.sh
 
 # 2. Portainer workload (ClusterIP only)
@@ -16,6 +20,7 @@ kubectl apply -f manifests/portainer.yaml
 kubectl apply -f manifests/ingress-tailscale.yaml
 
 kubectl -n portainer get deploy,svc,ingress
+# Complete Portainer admin setup immediately (security timeout otherwise)
 ```
 
 Full guide: [docs/tailscale-portainer.md](../../docs/tailscale-portainer.md)

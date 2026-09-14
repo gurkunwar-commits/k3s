@@ -3,6 +3,9 @@
 Keep Portainer **off the public internet**. Admins reach it only via your
 Tailscale tailnet (MagicDNS + HTTPS issued by Tailscale).
 
+Host Traefik on the node’s public `:443` does **not** conflict — Tailscale
+Ingress listens on the Tailscale IP (`100.x`) only.
+
 ## Architecture
 
 ```text
@@ -23,39 +26,88 @@ Ingress portainer-tailscale  →  Service portainer:9000  →  Portainer pod
 
 URL shape: `https://portainer.<tailnet-name>.ts.net`
 
+## Step 0 — Tailnet prerequisites (before install)
+
+Do these in the admin console **first**. Skipping them is the usual cause of
+CrashLoopBackOff or `Connection refused` on `:443`.
+
+### DNS + HTTPS
+
+[Admin → DNS](https://login.tailscale.com/admin/dns):
+
+1. Enable **MagicDNS**
+2. Enable **HTTPS Certificates**
+
+Without HTTPS Certificates the Ingress emits `HTTPSNotEnabled` and nothing
+listens on Tailscale `:443`.
+
+### ACL tags + access
+
+[Admin → Access controls](https://login.tailscale.com/admin/acls) — merge (keep
+your other rules):
+
+```json
+{
+  "tagOwners": {
+    "tag:k8s-operator": [],
+    "tag:k8s": ["tag:k8s-operator"]
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["tag:k8s:*"]
+    }
+  ]
+}
+```
+
+Use **`autogroup:member`** (singular). Do not mix with legacy
+`autogroup:members` in the same policy.
+
 ## Step 1 — OAuth client
 
-1. Open [Tailscale admin console](https://login.tailscale.com/admin/settings/oauth)
+1. Open [OAuth clients](https://login.tailscale.com/admin/settings/oauth)
 2. **Generate OAuth client**
-3. Scopes (minimum):
-   - `devices:core`
-   - `auth_keys` → **Write**
-4. Copy **Client ID** and **Client secret** (`tskey-client-…`)
+3. Scopes: `devices:core`, `auth_keys` → **Write**
+4. Tags the client may create: **`tag:k8s-operator`**, **`tag:k8s`**
+5. Copy **Client ID** and **Client secret** (`tskey-client-…`)
 
-Put them in `head/.env`:
+Missing tags → fatal log:
+
+```text
+requested tags [tag:k8s-operator] are invalid or not permitted (400)
+```
+
+Put credentials in `head/.env` on the **head node** (the host that runs the
+install script):
 
 ```bash
 TS_CLIENT_ID=k123456CNTRL
 TS_CLIENT_SECRET=tskey-client-xxxxx-yyyyy
 TS_OPERATOR_HOSTNAME=k3s-tailscale-operator
-# Optional rename of the MagicDNS label (default: portainer)
 PORTAINER_TS_HOSTNAME=portainer
 ```
 
 ## Step 2 — Install the operator
 
+Run the script (do **not** paste it piecemeal into bash — that often skips the
+OAuth values file):
+
 ```bash
 set -a; source head/.env; set +a
+echo "ID len=${#TS_CLIENT_ID} SECRET len=${#TS_CLIENT_SECRET}"
 chmod +x operators/tailscale/install-operator.sh
 ./operators/tailscale/install-operator.sh
 ```
 
-Confirm in the Tailscale admin **Machines** list that `k3s-tailscale-operator`
-(or your hostname) appears and is connected.
+Confirm in **Machines** that `k3s-tailscale-operator` (or your hostname) is
+**Connected**.
 
 ```bash
 kubectl -n tailscale get pods
 kubectl get ingressclass
+# Expect: operator 1/1 Running, IngressClass "tailscale"
 ```
 
 ## Step 3 — Deploy Portainer (ClusterIP only)
@@ -71,21 +123,37 @@ Do **not** apply `ingress-public.optional.yaml`.
 ## Step 4 — Tailscale Ingress
 
 ```bash
-# Optional: rename MagicDNS label
-# sed "s/portainer/${PORTAINER_TS_HOSTNAME}/g" ...
 kubectl apply -f operators/portainer/manifests/ingress-tailscale.yaml
 
+kubectl -n portainer get ingress portainer-tailscale -o wide
 kubectl -n portainer describe ingress portainer-tailscale
+kubectl -n tailscale get pods   # operator + ts-portainer-tailscale-…
 ```
 
-Wait until the Ingress shows an address / hostname. Then from a device on the
-tailnet:
+Wait until `ADDRESS` shows `portainer.<tailnet>.ts.net`. Find `<tailnet>` under
+Admin → **DNS**.
+
+From a device on the tailnet:
 
 ```text
 https://portainer.<your-tailnet>.ts.net
 ```
 
-Find `<your-tailnet>` under Tailscale admin → **DNS** (e.g. `tail12345.ts.net`).
+```bash
+curl -vkI https://portainer.<your-tailnet>.ts.net
+```
+
+### Complete Portainer admin setup immediately
+
+Portainer locks itself if no admin is created within its security window
+(*timed out for security purposes* / `/timeout.html`):
+
+```bash
+kubectl -n portainer rollout restart deploy/portainer
+kubectl -n portainer logs deploy/portainer --tail=40 | grep -A5 setup_token
+```
+
+Open the URL, paste `setup_token`, create the admin user right away.
 
 ## Step 5 — Remove public exposure (if previously enabled)
 
@@ -97,42 +165,40 @@ kubectl -n portainer delete ingress portainer portainer-public --ignore-not-foun
 
 ## Admin device checklist
 
-- [ ] Tailscale app installed and logged into the same tailnet  
-- [ ] MagicDNS enabled (Admin → DNS)  
-- [ ] Browser resolves `*.ts.net` (split DNS / MagicDNS on)  
-- [ ] You can ping the operator machine in the admin UI  
+- [ ] Tailscale app installed and logged into the same tailnet
+- [ ] MagicDNS enabled (Admin → DNS)
+- [ ] **HTTPS Certificates** enabled (Admin → DNS)
+- [ ] ACL `tagOwners` + `tag:k8s:*` accept for your users
+- [ ] OAuth client has tags `tag:k8s-operator` and `tag:k8s`
+- [ ] Browser resolves `*.ts.net` (Tailscale DNS on)
+- [ ] Operator + `portainer` machines **Connected** in Admin → Machines
+- [ ] Cluster commands run on the **head node** (or correct `KUBECONFIG`)
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---------|--------|
-| Ingress never gets an address | `kubectl -n tailscale logs deploy/operator` — OAuth scopes / secret |
+| Tags not permitted (400) | ACL `tagOwners` + OAuth client tag grants; reinstall operator |
+| Empty / bad OAuth secret | Fill `TS_CLIENT_*` in `head/.env`; run `install-operator.sh` |
+| `HTTPSNotEnabled` / `:443` refused | Enable HTTPS Certificates; delete `ts-portainer-*` pod |
 | DNS does not resolve | Enable MagicDNS; use Tailscale DNS on the client |
-| TLS warning | Wait for Tailscale cert provisioning; retry in a minute |
+| ACL mix of `member` / `members` | Use one autogroup style only |
+| `ProxyGroup "" does not exist` | OK for default Ingress proxies if `ts-portainer-*` is Running |
+| kubectl NotFound on laptop | SSH to head node; wrong cluster context |
+| Portainer security timeout | Restart deploy; setup with `setup_token` quickly |
+| Traefik on host `:443` | Unrelated to Tailscale `100.x:443` |
 | 502 / connection reset | `kubectl -n portainer get endpoints portainer` — pods Ready? |
-| Still reachable publicly | `kubectl -n portainer get ingress` — delete Traefik Ingresses |
+| Still reachable publicly | Delete Traefik Ingresses for Portainer |
+
+After turning HTTPS on mid-install:
+
+```bash
+kubectl -n tailscale delete pod -l tailscale.com/parent-resource=portainer-tailscale
+# or delete the ts-portainer-tailscale-*-0 pod by name
+```
 
 ## Hardening extras
 
-- Restrict which Tailscale users/groups can reach tagged devices (ACL in Tailscale policy file)
-- Tag the operator / Portainer proxy with something like `tag:k8s-admin` and allow only `group:sre`
-- Prefer Tailscale **auth** + Portainer local admin password (still set a strong Portainer admin password on first login)
-
-Example ACL snippet (Tailscale policy):
-
-```json
-{
-  "tagOwners": {
-    "tag:k8s-admin": ["autogroup:admin"]
-  },
-  "acls": [
-    {
-      "action": "accept",
-      "src": ["group:sre"],
-      "dst": ["tag:k8s-admin:*"]
-    }
-  ]
-}
-```
-
-(Exact tags depend on how you configure `operatorConfig.defaultTags` / ProxyGroup; start with default operator install, then tighten.)
+- Restrict `src` to `group:sre` (or similar) instead of `autogroup:member`
+- Prefer Tailscale identity + a strong Portainer admin password on first login
+- Operator README: [operators/tailscale/README.md](../operators/tailscale/README.md)
