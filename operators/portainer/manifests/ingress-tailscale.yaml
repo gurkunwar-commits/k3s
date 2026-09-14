@@ -1,0 +1,34 @@
+# Private-only access via Tailscale Kubernetes Operator (MagicDNS + HTTPS).
+# Requires: operators/tailscale installed and IngressClass "tailscale" Ready.
+#
+# Resulting URL (example):
+#   https://portainer.<your-tailnet>.ts.net
+#
+# Change the tls.hosts value to rename the MagicDNS label (must be unique in the tailnet).
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portainer-tailscale
+  namespace: portainer
+  labels:
+    app.kubernetes.io/name: portainer
+    app.kubernetes.io/part-of: k3s-platform
+  annotations:
+    app.kubernetes.io/component: private-admin-ui
+spec:
+  ingressClassName: tailscale
+  tls:
+    # Hostname label only — Tailscale appends .<tailnet>.ts.net and issues TLS
+    - hosts:
+        - portainer
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portainer
+                port:
+                  number: 9000

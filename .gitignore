@@ -1,0 +1,17 @@
+# Secrets and local env (never commit)
+**/.env
+**/.env.*
+!**/.env.example
+**/cluster.env
+**/CREDENTIALS.md
+**/kubeconfig
+**/*.pem
+**/*.key
+**/*-secret*.yaml
+!**/00-namespace-secrets.example.yaml
+
+# Local tooling
+.DS_Store
+*.swp
+.idea/
+.vscode/

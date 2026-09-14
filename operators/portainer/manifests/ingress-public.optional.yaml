@@ -1,0 +1,32 @@
+# OPTIONAL — public Traefik Ingress. Do NOT apply by default.
+# Portainer is a cluster-admin UI; prefer Tailscale (ingress-tailscale.yaml).
+#
+# Only use this if you accept internet exposure + strong auth / IP allowlists.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portainer-public
+  namespace: portainer
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - portainer.example.com
+      secretName: portainer-tls
+  rules:
+    - host: portainer.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portainer
+                port:
+                  number: 9000

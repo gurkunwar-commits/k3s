@@ -1,0 +1,175 @@
+# CloudNativePG HA — 1 primary + 2 replicas across three nodes
+# Backups: Barman → AWS S3 (set bucket/region/creds in secrets + destinationPath)
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-ha
+  namespace: postgres
+  labels:
+    app.kubernetes.io/name: postgres-ha
+spec:
+  instances: 3
+
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.5
+
+  # Apps should connect to:
+  #   RW:  postgres-ha-rw.postgres.svc:5432
+  #   RO:  postgres-ha-ro.postgres.svc:5432
+  #   Pooler RW: postgres-ha-pooler-rw.postgres.svc:5432
+  enableSuperuserAccess: true
+
+  bootstrap:
+    initdb:
+      database: appdb
+      owner: app
+      secret:
+        name: postgres-app-secret
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+
+  superuserSecret:
+    name: postgres-superuser-secret
+
+  storage:
+    size: 8Gi
+    storageClass: longhorn-postgres
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: 2Gi
+    storageClass: longhorn-postgres
+
+  postgresql:
+    synchronous:
+      method: any
+      number: 1
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      effective_cache_size: "768MB"
+      maintenance_work_mem: "64MB"
+      checkpoint_completion_target: "0.9"
+      wal_buffers: "16MB"
+      min_wal_size: "256MB"
+      max_wal_size: "1GB"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      work_mem: "4MB"
+      huge_pages: "off"
+      log_checkpoints: "on"
+      log_lock_waits: "on"
+      log_temp_files: "0"
+      log_min_duration_statement: "1000"
+
+  backup:
+    retentionPolicy: "14d"
+    barmanObjectStore:
+      # Replace with your AWS bucket (same region as AWS_REGION in the secret)
+      destinationPath: s3://YOUR_AWS_BUCKET/postgres-ha/
+      # Omit endpointURL for standard AWS S3. For S3-compatible endpoints only, set e.g.:
+      # endpointURL: https://s3.us-east-1.amazonaws.com
+      s3Credentials:
+        accessKeyId:
+          name: postgres-s3-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: postgres-s3-credentials
+          key: ACCESS_SECRET_KEY
+        region:
+          name: postgres-s3-credentials
+          key: AWS_REGION
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1536Mi
+
+  monitoring:
+    enablePodMonitor: false
+
+  failoverDelay: 0
+  smartShutdownTimeout: 180
+  stopDelay: 60
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-ha-pooler-rw
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres-ha
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      max_client_conn: "400"
+      default_pool_size: "25"
+  template:
+    metadata:
+      labels:
+        app: postgres-ha-pooler-rw
+    spec:
+      containers:
+        - name: pgbouncer
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    cnpg.io/poolerName: postgres-ha-pooler-rw
+                topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-ha-daily
+  namespace: postgres
+spec:
+  schedule: "0 30 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: postgres-ha
+  method: barmanObjectStore
+  immediate: true
+  suspend: false

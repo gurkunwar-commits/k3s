@@ -1,0 +1,25 @@
+# Example: app ConfigMap pointing at CNPG RW service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-db-config
+  namespace: apps
+data:
+  DATABASE_HOST: postgres-ha-rw.postgres.svc
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: appdb
+  # Prefer pooler for many short-lived connections:
+  # DATABASE_HOST: postgres-ha-pooler-rw.postgres.svc
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-db-credentials
+  namespace: apps
+type: Opaque
+stringData:
+  # Mirror username/password from postgres-app-secret (or use External Secrets)
+  username: app
+  password: ChangeMe-App-Password-123!
+  # DATABASE_URL: postgresql://app:ChangeMe-App-Password-123!@postgres-ha-rw.postgres.svc:5432/appdb

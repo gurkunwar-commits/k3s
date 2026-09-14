@@ -1,0 +1,54 @@
+---
+# Tenant / workload namespaces.
+#
+# Pod Security Admission: enforce the "baseline" profile (blocks privileged
+# containers, host namespaces, host ports, hostPath volumes) and warn on
+# "restricted". Baseline stops a compromised workload from escaping to the node;
+# move a namespace to enforce "restricted" once its workloads comply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  labels:
+    app.kubernetes.io/part-of: k3s-platform
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres-ha
+    app.kubernetes.io/part-of: k3s-platform
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+  labels:
+    app.kubernetes.io/part-of: k3s-platform
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: portainer
+  labels:
+    app.kubernetes.io/part-of: k3s-platform
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+# Operator namespaces (cert-manager, cnpg-system, longhorn-system, kube-system)
+# run trusted infrastructure that legitimately needs elevated privileges and are
+# intentionally left unlabelled (privileged). Do not run tenant workloads there.

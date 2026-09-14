@@ -1,0 +1,107 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portainer
+  namespace: portainer
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portainer-sa-clusteradmin
+  namespace: portainer
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: portainer-sa-clusteradmin-token
+  namespace: portainer
+  annotations:
+    kubernetes.io/service-account.name: portainer-sa-clusteradmin
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portainer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: portainer
+    namespace: portainer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portainer-sa-clusteradmin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: portainer-sa-clusteradmin
+    namespace: portainer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  type: ClusterIP
+  selector:
+    app: portainer
+  ports:
+    - name: http
+      port: 9000
+      targetPort: 9000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer
+  template:
+    metadata:
+      labels:
+        app: portainer
+    spec:
+      serviceAccountName: portainer
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: portainer
+          image: portainer/portainer-ce:2.45.0
+          args:
+            - --http-enabled
+          ports:
+            - containerPort: 9000
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          emptyDir: {}
