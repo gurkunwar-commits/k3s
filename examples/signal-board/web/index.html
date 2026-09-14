@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Velerion Signal Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#070b14; --bg2:#0b1120; --panel:rgba(20,29,48,.72); --panel-solid:#111a2c;
+    --line:rgba(120,150,200,.16); --line2:rgba(120,150,200,.28);
+    --ink:#eaf1ff; --muted:#9fb0cf; --faint:#66779a;
+    --cyan:#3ce0d6; --cyan2:#1aa9c9; --violet:#8b7bff; --pink:#ff5fa2; --amber:#ffc66b; --lime:#8be36b;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+    --sans:"Space Grotesk",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
+    min-height:100vh; overflow-x:hidden;
+  }
+  #bg{position:fixed; inset:0; z-index:-1; opacity:.55}
+  a{color:var(--cyan)}
+  .wrap{max-width:1180px; margin:0 auto; padding:0 20px}
+
+  /* header */
+  header{padding:34px 0 18px; border-bottom:1px solid var(--line)}
+  .top{display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+  .logo{width:42px;height:42px;flex:none;border-radius:11px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--cyan),var(--violet)); color:#04121a; font-weight:700;
+    box-shadow:0 0 28px -6px var(--cyan)}
+  .brand h1{font-size:21px; margin:0; letter-spacing:-.02em; font-weight:700}
+  .brand .env{font-family:var(--mono); font-size:11.5px; color:var(--faint); letter-spacing:.04em}
+  .live{margin-left:auto; display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11.5px; color:var(--muted);
+    border:1px solid var(--line2); border-radius:999px; padding:6px 12px; background:var(--panel)}
+  .beat{width:8px;height:8px;border-radius:50%;background:var(--lime);box-shadow:0 0 0 0 var(--lime);animation:beat 2s infinite}
+  .beat.off{background:var(--pink)}
+  @keyframes beat{0%{box-shadow:0 0 0 0 rgba(139,227,107,.6)}70%{box-shadow:0 0 0 9px rgba(139,227,107,0)}100%{box-shadow:0 0 0 0 rgba(139,227,107,0)}}
+
+  .hero{padding:26px 0 8px}
+  .hero h2{font-size:clamp(28px,5vw,46px); line-height:1.04; margin:0; letter-spacing:-.03em; text-wrap:balance;
+    background:linear-gradient(120deg,#fff 20%,var(--cyan) 60%,var(--violet)); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .hero p{color:var(--muted); max-width:64ch; margin:12px 0 0}
+
+  /* stat tiles */
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0 30px}
+  .stat{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; backdrop-filter:blur(8px)}
+  .stat .k{font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint)}
+  .stat .v{font-size:34px; font-weight:700; letter-spacing:-.02em; margin-top:4px; font-variant-numeric:tabular-nums;
+    background:linear-gradient(120deg,var(--cyan),var(--violet)); -webkit-background-clip:text; background-clip:text; color:transparent}
+
+  /* layout */
+  .grid{display:grid; grid-template-columns:400px 1fr; gap:22px; padding-bottom:60px; align-items:start}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; backdrop-filter:blur(8px)}
+  .card h3{margin:0 0 4px; font-size:15px; letter-spacing:-.01em}
+  .card .hint{color:var(--faint); font-size:12.5px; font-family:var(--mono); margin:0 0 14px}
+
+  label{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin:14px 0 6px}
+  input,textarea{width:100%; background:#0a1120; border:1px solid var(--line2); color:var(--ink); border-radius:10px;
+    padding:11px 13px; font-family:var(--sans); font-size:14px; resize:vertical}
+  input:focus,textarea:focus{outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(60,224,214,.15)}
+  textarea{min-height:74px}
+  .signals{display:flex; gap:8px; margin-top:6px; flex-wrap:wrap}
+  .sig{flex:1; min-width:56px; background:#0a1120; border:1px solid var(--line2); border-radius:11px; padding:10px 4px;
+    font-size:22px; cursor:pointer; text-align:center; transition:transform .1s, border-color .15s, background .15s}
+  .sig:hover{transform:translateY(-2px)}
+  .sig.on{border-color:var(--cyan); background:rgba(60,224,214,.12); box-shadow:0 0 18px -6px var(--cyan)}
+  .sig .lab{display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.08em; color:var(--faint); margin-top:3px; text-transform:uppercase}
+  button.post{margin-top:18px; width:100%; border:none; cursor:pointer; border-radius:11px; padding:13px;
+    font-family:var(--sans); font-weight:600; font-size:14.5px; color:#04121a;
+    background:linear-gradient(120deg,var(--cyan),var(--cyan2)); transition:filter .15s, transform .1s}
+  button.post:hover{filter:brightness(1.08)} button.post:active{transform:translateY(1px)}
+  button.post:disabled{opacity:.5; cursor:not-allowed}
+
+  /* chart */
+  .chart{margin-top:8px}
+  .bar-row{display:flex; align-items:center; gap:10px; margin:9px 0; font-size:13px}
+  .bar-row .em{width:22px; text-align:center; font-size:16px}
+  .bar-track{flex:1; height:10px; background:#0a1120; border-radius:6px; overflow:hidden; border:1px solid var(--line)}
+  .bar-fill{height:100%; border-radius:6px; width:0; transition:width .6s cubic-bezier(.2,.8,.2,1);
+    background:linear-gradient(90deg,var(--violet),var(--cyan))}
+  .bar-row .n{width:34px; text-align:right; font-family:var(--mono); color:var(--muted); font-variant-numeric:tabular-nums}
+
+  /* feed */
+  .feedhead{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px}
+  .feedhead h3{margin:0}
+  .feed{display:flex; flex-direction:column; gap:12px; max-height:none}
+  .entry{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; backdrop-filter:blur(8px);
+    animation:rise .45s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
+  .entry .meta{display:flex; align-items:center; gap:10px; margin-bottom:6px}
+  .avatar{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;font-weight:700;font-size:13px;color:#04121a}
+  .entry .who{font-weight:600; font-size:14px}
+  .entry .when{font-family:var(--mono); font-size:10.5px; color:var(--faint); margin-left:auto}
+  .entry .msg{color:#dbe6fb; font-size:14px}
+  .entry .foot{display:flex; align-items:center; gap:10px; margin-top:10px}
+  .tag{font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint);
+    border:1px solid var(--line); border-radius:999px; padding:3px 9px}
+  .react{margin-left:auto; display:inline-flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+    background:#0a1120; border:1px solid var(--line2); color:var(--muted); border-radius:999px; padding:5px 11px;
+    font-family:var(--mono); font-size:12px; transition:transform .1s, color .15s, border-color .15s}
+  .react:hover{color:var(--pink); border-color:var(--pink)} .react:active{transform:scale(.92)}
+  .react.bumped{color:var(--pink); border-color:var(--pink)}
+
+  footer{border-top:1px solid var(--line); padding:22px 0 60px; color:var(--faint); font-family:var(--mono); font-size:11.5px}
+  footer .chips{display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:8px}
+  footer b{color:var(--muted); font-weight:500}
+
+  .toast{position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:var(--panel-solid); border:1px solid var(--cyan); color:var(--ink); border-radius:12px;
+    padding:12px 18px; font-size:13.5px; box-shadow:0 12px 40px -12px rgba(0,0,0,.7); transition:.35s; z-index:50; pointer-events:none}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+
+  @media (max-width:840px){ .grid{grid-template-columns:1fr} .stats{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<header>
+  <div class="wrap top">
+    <div class="logo">V</div>
+    <div class="brand">
+      <h1>Velerion Signal Board</h1>
+      <div class="env">stg01-k3s.velerion.com · live on the cluster</div>
+    </div>
+    <div class="live"><span class="beat" id="beat"></span><span id="livetxt">connecting…</span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h2>A live wall, written straight to a highly-available Postgres.</h2>
+    <p>Every message you post is an <code>INSERT</code> into a 3-instance CloudNativePG cluster; every reaction is an
+       <code>UPDATE</code> through a PostgREST function; the counters and chart are live aggregate queries. Three tiers,
+       one round trip — running on the k3s platform behind Traefik and Let's Encrypt.</p>
+  </section>
+
+  <section class="stats">
+    <div class="stat"><div class="k">Signals posted</div><div class="v" id="s-entries">—</div></div>
+    <div class="stat"><div class="k">Reactions</div><div class="v" id="s-reactions">—</div></div>
+    <div class="stat"><div class="k">Unique voices</div><div class="v" id="s-visitors">—</div></div>
+  </section>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h3>Send a signal</h3>
+        <p class="hint">→ POST /api/entries</p>
+        <form id="form">
+          <label for="name">Your name</label>
+          <input id="name" maxlength="40" placeholder="e.g. Ada" autocomplete="off" required>
+          <label for="msg">Message</label>
+          <textarea id="msg" maxlength="280" placeholder="What's working well on the cluster today?" required></textarea>
+          <label>Signal</label>
+          <div class="signals" id="signals">
+            <div class="sig on" data-sig="rocket">🚀<span class="lab">ship</span></div>
+            <div class="sig" data-sig="idea">💡<span class="lab">idea</span></div>
+            <div class="sig" data-sig="fire">🔥<span class="lab">hot</span></div>
+            <div class="sig" data-sig="heart">❤️<span class="lab">love</span></div>
+            <div class="sig" data-sig="star">⭐<span class="lab">star</span></div>
+          </div>
+          <button class="post" id="submit" type="submit">Post to the cluster</button>
+        </form>
+      </div>
+
+      <div class="card" style="margin-top:22px">
+        <h3>Signal mix</h3>
+        <p class="hint">→ GET /api/signal_counts</p>
+        <div class="chart" id="chart"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="feedhead">
+        <h3>Live feed</h3>
+        <span class="tag" id="feedcount">—</span>
+      </div>
+      <div class="feed" id="feed"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="wrap">
+  Served by nginx · data via PostgREST · storage on CloudNativePG (1 primary + 2 replicas)
+  <div class="chips">
+    <span><b>Ingress:</b> Traefik + Let's Encrypt</span>
+    <span><b>Storage:</b> Longhorn</span>
+    <span><b>Platform:</b> k3s v1.36</span>
+    <span><b>Isolation:</b> NetworkPolicies + PSA baseline</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "/api";
+const EMOJI = {rocket:"🚀", idea:"💡", fire:"🔥", heart:"❤️", star:"⭐"};
+const AV = ["#3ce0d6","#8b7bff","#ff5fa2","#ffc66b","#8be36b","#5ab0ff"];
+let chosen = "rocket";
+let online = false;
+
+const $ = s => document.querySelector(s);
+function esc(s){const d=document.createElement("div"); d.textContent=s; return d.innerHTML;}
+function ago(iso){
+  const s = Math.max(1,(Date.now()-new Date(iso).getTime())/1000);
+  if(s<60) return Math.floor(s)+"s ago";
+  if(s<3600) return Math.floor(s/60)+"m ago";
+  if(s<86400) return Math.floor(s/3600)+"h ago";
+  return Math.floor(s/86400)+"d ago";
+}
+function color(name){let h=0; for(const c of name) h=(h*31+c.charCodeAt(0))>>>0; return AV[h%AV.length];}
+
+function setLive(ok){
+  online = ok;
+  $("#beat").classList.toggle("off", !ok);
+  $("#livetxt").textContent = ok ? "live · polling every 4s" : "reconnecting…";
+}
+function toast(msg){const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2600);}
+
+// animated count-up
+const shown = {};
+function animate(id,to){
+  const el=$("#"+id); const from = shown[id]||0; if(from===to){el.textContent=to.toLocaleString(); return;}
+  const t0=performance.now(), dur=650;
+  function step(t){const p=Math.min(1,(t-t0)/dur); const v=Math.round(from+(to-from)*(1-Math.pow(1-p,3)));
+    el.textContent=v.toLocaleString(); if(p<1) requestAnimationFrame(step); else shown[id]=to;}
+  requestAnimationFrame(step); shown[id]=to;
+}
+
+async function jget(path){const r=await fetch(API+path,{headers:{Accept:"application/json"}}); if(!r.ok) throw new Error(r.status); return r.json();}
+
+async function loadStats(){
+  const [s] = await jget("/stats");
+  animate("s-entries", s.total_entries); animate("s-reactions", s.total_reactions); animate("s-visitors", s.unique_visitors);
+}
+async function loadChart(){
+  const rows = await jget("/signal_counts");
+  const max = Math.max(1, ...rows.map(r=>r.count));
+  const order = ["rocket","idea","fire","heart","star"];
+  rows.sort((a,b)=>order.indexOf(a.signal)-order.indexOf(b.signal));
+  $("#chart").innerHTML = rows.map(r=>`
+    <div class="bar-row"><span class="em">${EMOJI[r.signal]||"•"}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${Math.round(r.count/max*100)}%"></span></span>
+      <span class="n">${r.count}</span></div>`).join("");
+}
+let known = new Set();
+async function loadFeed(){
+  const rows = await jget("/entries?order=created_at.desc&limit=30");
+  $("#feedcount").textContent = rows.length + " recent";
+  $("#feed").innerHTML = rows.map(e=>`
+    <div class="entry" data-id="${e.id}">
+      <div class="meta">
+        <span class="avatar" style="background:${color(e.name)}">${esc(e.name[0]||"?").toUpperCase()}</span>
+        <span class="who">${esc(e.name)}</span>
+        <span class="when">${ago(e.created_at)}</span>
+      </div>
+      <div class="msg">${esc(e.message)}</div>
+      <div class="foot">
+        <span class="tag">${EMOJI[e.signal]||""} ${e.signal}</span>
+        <span class="react" data-id="${e.id}">❤️ <span>${e.reactions}</span></span>
+      </div>
+    </div>`).join("");
+  known = new Set(rows.map(r=>r.id));
+}
+
+async function refresh(){
+  try{ await Promise.all([loadStats(), loadChart(), loadFeed()]); setLive(true); }
+  catch(e){ setLive(false); }
+}
+
+// react (event delegation)
+$("#feed").addEventListener("click", async e=>{
+  const btn = e.target.closest(".react"); if(!btn) return;
+  const id = btn.dataset.id; const span = btn.querySelector("span");
+  span.textContent = (+span.textContent)+1; btn.classList.add("bumped");
+  try{ await fetch(API+"/rpc/react",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({entry_id:+id})});
+       loadStats(); }
+  catch(err){ toast("Reaction failed — retrying next poll"); }
+});
+
+// signal picker
+$("#signals").addEventListener("click", e=>{
+  const s=e.target.closest(".sig"); if(!s) return;
+  document.querySelectorAll(".sig").forEach(x=>x.classList.remove("on")); s.classList.add("on"); chosen=s.dataset.sig;
+});
+
+// submit
+$("#form").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const name=$("#name").value.trim(), message=$("#msg").value.trim();
+  if(!name||!message) return;
+  $("#submit").disabled=true; $("#submit").textContent="Posting…";
+  try{
+    const r = await fetch(API+"/entries",{method:"POST",
+      headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+      body:JSON.stringify({name,message,signal:chosen})});
+    if(!r.ok) throw new Error(r.status);
+    $("#msg").value=""; toast("Signal committed to Postgres ✓"); await refresh();
+  }catch(err){ toast("Could not post (validation or network)"); }
+  finally{ $("#submit").disabled=false; $("#submit").textContent="Post to the cluster"; }
+});
+
+// background canvas: drifting node grid
+(function(){
+  const c=$("#bg"), x=c.getContext("2d"); let w,h,pts;
+  function size(){w=c.width=innerWidth; h=c.height=innerHeight;
+    pts=Array.from({length:Math.min(70,Math.floor(w*h/26000))},()=>({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25}));}
+  size(); addEventListener("resize",size);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function draw(){
+    x.clearRect(0,0,w,h);
+    for(const p of pts){p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>w)p.vx*=-1; if(p.y<0||p.y>h)p.vy*=-1;}
+    for(let i=0;i<pts.length;i++){
+      for(let j=i+1;j<pts.length;j++){
+        const a=pts[i],b=pts[j],d=Math.hypot(a.x-b.x,a.y-b.y);
+        if(d<130){x.strokeStyle="rgba(60,224,214,"+(.14*(1-d/130))+")"; x.beginPath(); x.moveTo(a.x,a.y); x.lineTo(b.x,b.y); x.stroke();}
+      }
+      x.fillStyle="rgba(139,123,255,.5)"; x.beginPath(); x.arc(pts[i].x,pts[i].y,1.4,0,7); x.fill();
+    }
+    if(!reduce) requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// boot
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>
